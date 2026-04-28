@@ -1,0 +1,124 @@
+/* InputfieldTel — admin styles
+ * Maps intl-tel-input CSS variables to ProcessWire AdminThemeUikit design system.
+ */
+
+/* ── ITI theme mapping — follows --pw-* tokens for light/dark mode ───────── */
+.iti {
+    --iti-dropdown-bg:     var(--pw-blocks-background);
+    --iti-border-color:    var(--pw-border-color);
+    --iti-hover-color:     var(--pw-main-background);
+    --iti-text-color:      var(--pw-text-color);
+    --iti-muted-color:     var(--pw-muted-color, rgba(0,0,0,0.55));
+    --iti-dialcode-color:  var(--pw-muted-color, rgba(0,0,0,0.55));
+    --iti-search-input-bg: var(--pw-inputs-background);
+    --iti-icon-color:      var(--pw-muted-color, #555);
+}
+
+/* ── Wrapper ─────────────────────────────────────────────────────────────── */
+.InputfieldTelWrapper {
+    position: relative;
+}
+
+.InputfieldTelWrapper .iti {
+    width: 100%;
+}
+
+/* ── Visible input ───────────────────────────────────────────────────────── */
+.InputfieldTelWrapper .iti input[type="tel"].uk-input {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* ── Flag button ─────────────────────────────────────────────────────────── */
+.InputfieldTelWrapper .iti__country-container {
+    background-color: var(--pw-inputs-background);
+    border-right: 1px solid var(--pw-border-color);
+}
+
+/* ── Dropdown ────────────────────────────────────────────────────────────── */
+.iti--container,
+.iti__dropdown-content,
+.iti--inline-dropdown .iti__dropdown-content {
+    z-index: 999999 !important;
+    background-color: var(--pw-blocks-background) !important;
+    border-color: var(--pw-border-color) !important;
+    border-radius: var(--pw-input-radius, 0);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.2) !important;
+    min-width: 100%;
+}
+
+/* Country rows */
+.iti__country {
+    color: var(--pw-text-color) !important;
+}
+
+.iti__country.iti__highlight,
+.iti__country:hover {
+    background-color: var(--pw-main-background) !important;
+}
+
+.iti__country-name {
+    color: var(--pw-text-color) !important;
+}
+
+.iti__dial-code {
+    color: var(--pw-muted-color, rgba(0,0,0,0.55)) !important;
+}
+
+/* Divider */
+.iti__divider {
+    border-bottom-color: var(--pw-border-color) !important;
+}
+
+/* Search input */
+.iti__search-input {
+    background-color: var(--pw-inputs-background) !important;
+    color: var(--pw-text-color) !important;
+    border-color: var(--pw-border-color) !important;
+}
+
+.iti__search-input::placeholder {
+    color: var(--pw-muted-color, rgba(0,0,0,0.45)) !important;
+}
+
+/* Search icon and clear button */
+.iti__search-icon-svg {
+    stroke: var(--pw-muted-color, #555) !important;
+}
+
+.iti__search-clear-bg {
+    fill: var(--pw-muted-color, #555) !important;
+}
+
+/* Arrow */
+.iti__arrow {
+    border-right-color: var(--pw-muted-color, #555) !important;
+    border-bottom-color: var(--pw-muted-color, #555) !important;
+}
+
+/* Selected dial code */
+.iti__selected-dial-code {
+    color: var(--pw-text-color) !important;
+}
+
+/* Separate dial code */
+.iti__selected-country {
+    background-color: var(--pw-inputs-background);
+}
+
+/* ── Dropdown width ─────────────────────────────────────────────────────── */
+.iti--inline-dropdown .iti__dropdown-content {
+    min-width: 280px !important;
+    box-sizing: border-box !important;
+}
+
+/* ── Force dropdown above sticky Save button ────────────────────────────── */
+.InputfieldTelWrapper {
+    position: relative;
+    z-index: 999999;
+}
+
+.InputfieldTelWrapper .iti--inline-dropdown .iti__dropdown-content {
+    position: absolute !important;
+    z-index: 999999 !important;
+}
