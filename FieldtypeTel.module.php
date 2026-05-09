@@ -41,7 +41,7 @@ class FieldtypeTel extends Fieldtype implements Module, ConfigurableModule {
         return [
             'title'    => 'Phone',
             'summary'  => 'International phone number field powered by intl-tel-input.',
-            'version'  => 100,
+            'version'  => 103,
             'author'   => 'Maxim Semenov',
             'icon'     => 'phone',
             'href'     => 'https://github.com/mxmsmnv/FieldtypeTel',
@@ -323,7 +323,6 @@ class FieldtypeTel extends Fieldtype implements Module, ConfigurableModule {
 
     public function init(): void {
         parent::init();
-        require_once __DIR__ . '/TelValue.php';
         $this->addHookAfter('Pages::saved', $this, 'hookSaveFromPost');
         $this->addHookAfter('ProcessField::processInput', $this, 'hookProcessFieldInput');
     }
@@ -331,6 +330,7 @@ class FieldtypeTel extends Fieldtype implements Module, ConfigurableModule {
     public function hookSaveFromPost(HookEvent $event): void {
         $page = $event->arguments(0);
         if(!$page instanceof Page) return;
+        if(!$this->wire('process') instanceof ProcessPageEdit) return;
         $input = $this->wire('input');
         if(!$input || !$input->requestMethod('POST')) return;
 
@@ -349,17 +349,27 @@ class FieldtypeTel extends Fieldtype implements Module, ConfigurableModule {
             $national = $san->text($national);
             $country  = $san->alphanumeric($country);
 
-            // Normalize: strip all non-digit chars from raw number for E.164 assembly
-            $digits = preg_replace('/[^0-9]/', '', $e164);
-
+            // Validate country against known list
             $all = self::getAllCountries();
+            if ($country && !isset($all[$country])) $country = '';
+
+            // If all values empty — delete the row and move on
+            if($e164 === '' && $intl === '' && $national === '') {
+                $db    = $this->wire('database');
+                $table = $db->escapeTable($field->getTable());
+                $stmt  = $db->prepare("DELETE FROM `{$table}` WHERE pages_id=:pid");
+                $stmt->bindValue(':pid', $page->id, \PDO::PARAM_INT);
+                $stmt->execute();
+                continue;
+            }
+
+            // Normalize: strip all non-digit chars from raw number for E.164 assembly
+            $digits   = preg_replace('/[^0-9]/', '', $e164);
             $dialCode = isset($all[$country]) ? $all[$country]['dial'] : '';
 
             // If e164 looks unformatted (no leading +dialCode), rebuild it
             if($dialCode && $digits) {
-                $expectedPrefix = $dialCode;
-                // Check if digits already start with dial code
-                if(str_starts_with($digits, $expectedPrefix)) {
+                if(str_starts_with($digits, $dialCode)) {
                     $e164 = '+' . $digits;
                 } else {
                     $e164 = '+' . $dialCode . $digits;
@@ -369,25 +379,17 @@ class FieldtypeTel extends Fieldtype implements Module, ConfigurableModule {
             }
 
             // If JS didn't format properly, derive intl/national from e164 server-side
-            $intlDigits  = preg_replace('/[^0-9]/', '', $intl);
-            $e164Digits  = preg_replace('/[^0-9]/', '', $e164);
-            $natDigits   = preg_replace('/[^0-9]/', '', $national);
-            // JS formatted properly if intl starts with + and contains dial code
-            $jsFormatted = $intl && str_starts_with($intl, '+');
-            $jsDidNotFormat = !$jsFormatted;
-
-            if($jsDidNotFormat) {
-                // national = digits after dial code
+            if(!($intl && str_starts_with($intl, '+'))) {
                 if($dialCode && str_starts_with($e164, '+' . $dialCode)) {
                     $national = substr($e164, 1 + strlen($dialCode));
                 } else {
                     $national = ltrim($e164, '+');
                 }
-                // intl = +dialCode + space + national
                 $intl = $dialCode ? '+' . $dialCode . ' ' . $national : $e164;
             }
 
-            $table = $field->getTable();
+            $db    = $this->wire('database');
+            $table = $db->escapeTable($field->getTable());
             $sql   = "INSERT INTO `{$table}` (pages_id, `data`, `intl`, `national`, `country`)
                       VALUES(:pid, :e164, :intl, :national, :country)
                       ON DUPLICATE KEY UPDATE
@@ -480,6 +482,10 @@ class FieldtypeTel extends Fieldtype implements Module, ConfigurableModule {
     public function getInputfield(Page $page, Field $field): InputfieldTel {
         /** @var InputfieldTel $f */
         $f = $this->modules->get('InputfieldTel');
+        foreach (InputfieldTel::getDefaultFieldConfig() as $key => $default) {
+            $val = $field->get($key);
+            $f->set($key, ($val !== null && $val !== '') ? $val : $default);
+        }
         return $f;
     }
 
@@ -563,7 +569,8 @@ class FieldtypeTel extends Fieldtype implements Module, ConfigurableModule {
             $stmt->bindValue(':pid', $page->id, \PDO::PARAM_INT);
             $stmt->execute();
             $row = $stmt->fetch(\PDO::FETCH_ASSOC);
-        } catch (\Exception $e) {
+        } catch (\PDOException $e) {
+            $this->wire('log')->error("FieldtypeTel: loadPageField failed for page {$page->id}: " . $e->getMessage());
             return null;
         }
         if (!$row) {
@@ -580,6 +587,10 @@ class FieldtypeTel extends Fieldtype implements Module, ConfigurableModule {
     public function savePageField(Page $page, Field $field): bool {
         $value = $page->get($field->name);
         if (!$value instanceof TelValue) return true;
+
+        if ($this->isDeleteValue($page, $field, $value)) {
+            return $this->deletePageField($page, $field);
+        }
 
         $table = $field->getTable();
         $sql   = "INSERT INTO `{$table}` (pages_id, `data`, `intl`, `national`, `country`)

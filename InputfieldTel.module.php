@@ -12,7 +12,7 @@ class InputfieldTel extends Inputfield implements Module {
         return [
             'title'    => 'Phone Inputfield',
             'summary'  => 'Inputfield for FieldtypeTel — renders intl-tel-input.',
-            'version'  => 100,
+            'version'  => 103,
             'author'   => 'Maxim Semenov',
             'icon'     => 'phone',
             'href'     => 'https://github.com/mxmsmnv/FieldtypeTel',
@@ -104,9 +104,11 @@ class InputfieldTel extends Inputfield implements Module {
     if (!inputEl) return;
 
     function initIti() {
+        var utilsReady = false;
+
         opts.loadUtils = function() {
             return import(assetsUrl + 'utils.js').then(function(m) {
-                // Once utils loaded, re-sync hidden fields with proper formatting
+                utilsReady = true;
                 if (inputEl.value.trim()) {
                     syncHiddenFields();
                 }
@@ -140,27 +142,26 @@ class InputfieldTel extends Inputfield implements Module {
             var countryData = iti.getSelectedCountryData();
             countryEl.value = countryData ? (countryData.iso2 || '') : '';
 
-            if (window.intlTelInputUtils) {
+            if (utilsReady) {
                 e164El.value = iti.getNumber(0) || raw;
                 intlEl.value = iti.getNumber(1) || raw;
                 natEl.value  = iti.getNumber(2) || raw;
             } else {
-                // utils not loaded yet — store raw, will be formatted on reload
+                // utils not loaded yet — store raw, will be re-synced once utils resolve
                 e164El.value = raw;
                 intlEl.value = raw;
                 natEl.value  = raw;
             }
         }
 
+        inputEl.addEventListener('input',         syncHiddenFields);
         inputEl.addEventListener('change',        syncHiddenFields);
         inputEl.addEventListener('blur',          syncHiddenFields);
         inputEl.addEventListener('countrychange', syncHiddenFields);
-        inputEl.addEventListener('keyup',         syncHiddenFields);
 
-        // Sync on submit — prevent default, sync, then resubmit
         var form = inputEl.closest('form');
         if (form) {
-            form.addEventListener('submit', function(e) {
+            form.addEventListener('submit', function() {
                 syncHiddenFields();
             });
         }
@@ -181,6 +182,8 @@ class InputfieldTel extends Inputfield implements Module {
     // ── Process POST ──────────────────────────────────────────────────────────
 
     public function ___processInput(WireInputData $input): self {
+        parent::___processInput($input);
+
         $name = $this->attr('name');
         $san  = $this->wire('sanitizer');
 
