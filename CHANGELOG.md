@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.0.4] — 2026-05-08
+
+### Fixed
+
+- **Field-level settings** now persist reliably by saving `FieldtypeTel` config in `saveFieldReady()`, instead of using a `ProcessField::processInput` hook that did not receive the expected `Field` argument.
+- **`hookSaveFromPost()`** now skips FieldtypeTel fields whose hidden inputs were not present in the submitted form, preventing hidden or omitted fields from deleting existing phone data.
+- **Phone normalization** now runs through a shared server-side `normalizePhoneParts()` path for `InputfieldTel::processInput()`, `hookSaveFromPost()`, `sleepValue()`, and `savePageField()`.
+- **Fallback E.164 generation** now strips a single national trunk prefix where appropriate, fixing values such as UK `020...` becoming `+44020...`.
+- **intl-tel-input v28 formatting** now uses string format constants (`E164`, `INTERNATIONAL`, `NATIONAL`) instead of numeric values, so hidden fields receive the expected phone formats.
+- **Separate dial code defaults** now explicitly pass `separateDialCode` to intl-tel-input, so the module default `false` is respected.
+- **Text selectors** now force LIKE mode for non-database operators, avoiding `MATCH ... AGAINST` queries on tables without FULLTEXT indexes.
+- **Table names** in `loadPageField()` and `savePageField()` are now escaped consistently before being used in SQL.
+
 ## [1.0.3] — 2026-05-08
 
 ### Fixed

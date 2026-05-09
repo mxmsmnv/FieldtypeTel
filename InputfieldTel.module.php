@@ -12,7 +12,7 @@ class InputfieldTel extends Inputfield implements Module {
         return [
             'title'    => 'Phone Inputfield',
             'summary'  => 'Inputfield for FieldtypeTel — renders intl-tel-input.',
-            'version'  => 103,
+            'version'  => 104,
             'author'   => 'Maxim Semenov',
             'icon'     => 'phone',
             'href'     => 'https://github.com/mxmsmnv/FieldtypeTel',
@@ -68,7 +68,7 @@ class InputfieldTel extends Inputfield implements Module {
         $assetsUrl = $this->wire('config')->urls->get('FieldtypeTel') . 'assets/iti/';
 
         // Display value in the visible input: national → intl → e164
-        $displayValue   = $national ?: $intl ?: $e164;
+        $displayValue   = $this->get('field_show_dial_code') ? ($intl ?: $e164 ?: $national) : ($national ?: $intl ?: $e164);
         $displayEscaped = htmlspecialchars($displayValue, ENT_QUOTES, 'UTF-8');
 
         $e164Escaped    = htmlspecialchars($e164,    ENT_QUOTES, 'UTF-8');
@@ -143,9 +143,9 @@ class InputfieldTel extends Inputfield implements Module {
             countryEl.value = countryData ? (countryData.iso2 || '') : '';
 
             if (utilsReady) {
-                e164El.value = iti.getNumber(0) || raw;
-                intlEl.value = iti.getNumber(1) || raw;
-                natEl.value  = iti.getNumber(2) || raw;
+                e164El.value = iti.getNumber('E164') || raw;
+                intlEl.value = iti.getNumber('INTERNATIONAL') || raw;
+                natEl.value  = iti.getNumber('NATIONAL') || raw;
             } else {
                 // utils not loaded yet — store raw, will be re-synced once utils resolve
                 e164El.value = raw;
@@ -192,18 +192,18 @@ class InputfieldTel extends Inputfield implements Module {
         $national = $san->text($input->{$name . '_national'} ?? '');
         $country = $san->alphanumeric($input->{$name . '_country'} ?? '');
 
-        // Validate ISO2
-        $all = FieldtypeTel::getAllCountries();
-        if ($country && !isset($all[$country])) $country = '';
-
-        // Normalize E.164 — ensure it starts with +
-        if ($e164 && !str_starts_with($e164, '+')) $e164 = '+' . $e164;
+        $parts = FieldtypeTel::normalizePhoneParts($e164, $intl, $national, $country);
+        $e164 = $parts['e164'];
+        $intl = $parts['intl'];
+        $national = $parts['national'];
+        $country = $parts['country'];
 
         $tel = new TelValue();
         $tel->e164    = $e164;
         $tel->intl    = $intl;
         $tel->national = $national;
         $tel->country = $country;
+        $all = FieldtypeTel::getAllCountries();
         if ($country && isset($all[$country])) {
             $tel->dialCode = $all[$country]['dial'];
         }
@@ -258,24 +258,19 @@ class InputfieldTel extends Inputfield implements Module {
         $fieldSeparate = $this->get('field_separate_dial_code');
         if ($fieldSeparate !== '') {
             $opts['separateDialCode'] = (bool) $fieldSeparate;
-        } elseif (!empty($moduleCfg['separate_dial_code'])) {
-            $opts['separateDialCode'] = true;
+        } else {
+            $opts['separateDialCode'] = !empty($moduleCfg['separate_dial_code']);
         }
 
         if (!$this->get('field_allow_dropdown')) {
             $opts['allowDropdown'] = false;
         }
 
-        if (!$this->get('field_national_mode')) {
+        if (!$this->get('field_national_mode') || $this->get('field_show_dial_code')) {
             $opts['nationalMode'] = false;
         }
 
         $opts['autoPlaceholder'] = $this->get('field_auto_placeholder') ?: 'polite';
-
-        // Show dial code inside the input (e.g. "+1 (202) 555-0123")
-        if ($this->get('field_show_dial_code')) {
-            $opts['showDialCode'] = true;
-        }
 
         // Format number as user types (default on)
         if (!$this->get('field_format_on_display')) {

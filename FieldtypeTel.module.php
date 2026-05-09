@@ -41,7 +41,7 @@ class FieldtypeTel extends Fieldtype implements Module, ConfigurableModule {
         return [
             'title'    => 'Phone',
             'summary'  => 'International phone number field powered by intl-tel-input.',
-            'version'  => 103,
+            'version'  => 104,
             'author'   => 'Maxim Semenov',
             'icon'     => 'phone',
             'href'     => 'https://github.com/mxmsmnv/FieldtypeTel',
@@ -324,7 +324,6 @@ class FieldtypeTel extends Fieldtype implements Module, ConfigurableModule {
     public function init(): void {
         parent::init();
         $this->addHookAfter('Pages::saved', $this, 'hookSaveFromPost');
-        $this->addHookAfter('ProcessField::processInput', $this, 'hookProcessFieldInput');
     }
 
     public function hookSaveFromPost(HookEvent $event): void {
@@ -338,6 +337,13 @@ class FieldtypeTel extends Fieldtype implements Module, ConfigurableModule {
             if(!$field->type instanceof FieldtypeTel) continue;
 
             $name     = $field->name;
+            if(
+                !isset($input->post[$name . '_e164']) &&
+                !isset($input->post[$name . '_intl']) &&
+                !isset($input->post[$name . '_national']) &&
+                !isset($input->post[$name . '_country'])
+            ) continue;
+
             $e164     = (string)($input->post($name . '_e164')    ?? '');
             $intl     = (string)($input->post($name . '_intl')    ?? '');
             $national = (string)($input->post($name . '_national') ?? '');
@@ -349,10 +355,6 @@ class FieldtypeTel extends Fieldtype implements Module, ConfigurableModule {
             $national = $san->text($national);
             $country  = $san->alphanumeric($country);
 
-            // Validate country against known list
-            $all = self::getAllCountries();
-            if ($country && !isset($all[$country])) $country = '';
-
             // If all values empty — delete the row and move on
             if($e164 === '' && $intl === '' && $national === '') {
                 $db    = $this->wire('database');
@@ -363,30 +365,11 @@ class FieldtypeTel extends Fieldtype implements Module, ConfigurableModule {
                 continue;
             }
 
-            // Normalize: strip all non-digit chars from raw number for E.164 assembly
-            $digits   = preg_replace('/[^0-9]/', '', $e164);
-            $dialCode = isset($all[$country]) ? $all[$country]['dial'] : '';
-
-            // If e164 looks unformatted (no leading +dialCode), rebuild it
-            if($dialCode && $digits) {
-                if(str_starts_with($digits, $dialCode)) {
-                    $e164 = '+' . $digits;
-                } else {
-                    $e164 = '+' . $dialCode . $digits;
-                }
-            } elseif($digits) {
-                $e164 = '+' . $digits;
-            }
-
-            // If JS didn't format properly, derive intl/national from e164 server-side
-            if(!($intl && str_starts_with($intl, '+'))) {
-                if($dialCode && str_starts_with($e164, '+' . $dialCode)) {
-                    $national = substr($e164, 1 + strlen($dialCode));
-                } else {
-                    $national = ltrim($e164, '+');
-                }
-                $intl = $dialCode ? '+' . $dialCode . ' ' . $national : $e164;
-            }
+            $parts = self::normalizePhoneParts($e164, $intl, $national, $country);
+            $e164 = $parts['e164'];
+            $intl = $parts['intl'];
+            $national = $parts['national'];
+            $country = $parts['country'];
 
             $db    = $this->wire('database');
             $table = $db->escapeTable($field->getTable());
@@ -406,12 +389,91 @@ class FieldtypeTel extends Fieldtype implements Module, ConfigurableModule {
         }
     }
 
-    public function hookProcessFieldInput(HookEvent $event): void {
-        $field = $event->arguments(0);
-        if(!$field instanceof Field) return;
+    public static function normalizePhoneParts(string $e164, string $intl, string $national, string $country): array {
+        $all = self::getAllCountries();
+        $e164 = trim($e164);
+        $intl = trim($intl);
+        $national = trim($national);
+        $country = strtolower(preg_replace('/[^a-z0-9]/i', '', $country));
+        if($country && !isset($all[$country])) $country = '';
+
+        $dialCode = isset($all[$country]) ? $all[$country]['dial'] : '';
+        $digits = preg_replace('/[^0-9]/', '', $e164);
+
+        if($e164 !== '' && str_starts_with($e164, '+') && $digits !== '') {
+            $e164 = '+' . $digits;
+        } else {
+            if($digits === '') $digits = preg_replace('/[^0-9]/', '', $intl);
+            if($digits === '') $digits = preg_replace('/[^0-9]/', '', $national);
+
+            if($intl !== '' && str_starts_with($intl, '+') && $digits !== '') {
+                $e164 = '+' . $digits;
+            } elseif($dialCode && $digits !== '') {
+                if(str_starts_with($digits, $dialCode)) {
+                    $e164 = '+' . $digits;
+                } else {
+                    if(!in_array($country, ['it', 'va'], true)) {
+                        $digits = preg_replace('/^0/', '', $digits);
+                    }
+                    $e164 = $digits !== '' ? '+' . $dialCode . $digits : '';
+                }
+            } elseif($digits !== '') {
+                $e164 = '+' . $digits;
+            }
+        }
+
+        if($e164 !== '' && (!str_starts_with($intl, '+') || $intl === $national)) {
+            $displayNational = $national;
+            if($displayNational === '' || $displayNational === $e164 || str_starts_with($displayNational, '+')) {
+                if($dialCode && str_starts_with($e164, '+' . $dialCode)) {
+                    $displayNational = substr($e164, 1 + strlen($dialCode));
+                } else {
+                    $displayNational = ltrim($e164, '+');
+                }
+            }
+            $intl = $dialCode ? '+' . $dialCode . ' ' . $displayNational : $e164;
+            if($national === '' || $national === $e164 || str_starts_with($national, '+')) {
+                $national = $displayNational;
+            }
+        }
+
+        return [
+            'e164' => $e164,
+            'intl' => $intl,
+            'national' => $national,
+            'country' => $country,
+        ];
+    }
+
+    public function ___saveFieldReady(Field $field): void {
+        parent::___saveFieldReady($field);
+
         if(!$field->type instanceof FieldtypeTel) return;
+        if(!$this->wire('process') instanceof ProcessField) return;
 
         $input = $this->wire('input');
+        if(!$input || !$input->requestMethod('POST')) return;
+
+        $post = $input->post;
+        if(
+            !isset($post['field_initial_country']) &&
+            !isset($post['field_separate_dial_code']) &&
+            !isset($post['field_auto_placeholder'])
+        ) return;
+
+        $all  = self::getAllCountries();
+
+        $initialCountry = (string) ($post->field_initial_country ?? '');
+        $initialCountry = strtolower($this->wire('sanitizer')->alphanumeric($initialCountry));
+        $field->set('field_initial_country', isset($all[$initialCountry]) ? $initialCountry : '');
+
+        $separateDialCode = (string) ($post->field_separate_dial_code ?? '');
+        $field->set('field_separate_dial_code', in_array($separateDialCode, ['0', '1'], true) ? $separateDialCode : '');
+
+        $autoPlaceholder = (string) ($post->field_auto_placeholder ?? 'polite');
+        if(!in_array($autoPlaceholder, ['polite', 'aggressive', 'off'], true)) $autoPlaceholder = 'polite';
+        $field->set('field_auto_placeholder', $autoPlaceholder);
+
         $checkboxKeys = [
             'field_allow_dropdown',
             'field_national_mode',
@@ -419,7 +481,7 @@ class FieldtypeTel extends Fieldtype implements Module, ConfigurableModule {
             'field_format_on_display',
         ];
         foreach($checkboxKeys as $key) {
-            $field->set($key, (int) $input->post->$key);
+            $field->set($key, (int) $post->$key);
         }
     }
 
@@ -465,11 +527,12 @@ class FieldtypeTel extends Fieldtype implements Module, ConfigurableModule {
     public function ___sleepValue(Page $page, Field $field, $value): array {
         if (!$value instanceof TelValue) return [];
         $san = $this->wire('sanitizer');
+        $parts = self::normalizePhoneParts($value->e164, $value->intl, $value->national, $value->country);
         return [
-            'data'     => $san->text($value->e164),
-            'intl'     => $san->text($value->intl),
-            'national' => $san->text($value->national),
-            'country'  => $san->alphanumeric($value->country),
+            'data'     => $san->text($parts['e164']),
+            'intl'     => $san->text($parts['intl']),
+            'national' => $san->text($parts['national']),
+            'country'  => $san->alphanumeric($parts['country']),
         ];
     }
 
@@ -517,6 +580,7 @@ class FieldtypeTel extends Fieldtype implements Module, ConfigurableModule {
             return parent::getMatchQuery($query, $table, $col, $operator, $value);
         }
         $ft = new DatabaseQuerySelectFulltext($query);
+        $ft->forceLike(true);
         $ft->match($table, $col, $operator, $value);
         return $query;
     }
@@ -563,7 +627,7 @@ class FieldtypeTel extends Fieldtype implements Module, ConfigurableModule {
 
     public function loadPageField(Page $page, Field $field) {
         $db    = $this->wire('database');
-        $table = $field->getTable();
+        $table = $db->escapeTable($field->getTable());
         try {
             $stmt = $db->prepare("SELECT `data`, `intl`, `national`, `country` FROM `{$table}` WHERE pages_id=:pid");
             $stmt->bindValue(':pid', $page->id, \PDO::PARAM_INT);
@@ -592,7 +656,9 @@ class FieldtypeTel extends Fieldtype implements Module, ConfigurableModule {
             return $this->deletePageField($page, $field);
         }
 
-        $table = $field->getTable();
+        $db    = $this->wire('database');
+        $table = $db->escapeTable($field->getTable());
+        $parts = self::normalizePhoneParts($value->e164, $value->intl, $value->national, $value->country);
         $sql   = "INSERT INTO `{$table}` (pages_id, `data`, `intl`, `national`, `country`)
                   VALUES(:pid, :e164, :intl, :national, :country)
                   ON DUPLICATE KEY UPDATE
@@ -601,12 +667,12 @@ class FieldtypeTel extends Fieldtype implements Module, ConfigurableModule {
                     `national`=VALUES(`national`),
                     `country`=VALUES(`country`)";
 
-        $stmt = $this->wire('database')->prepare($sql);
+        $stmt = $db->prepare($sql);
         $stmt->bindValue(':pid',      $page->id,        \PDO::PARAM_INT);
-        $stmt->bindValue(':e164',     $value->e164,     \PDO::PARAM_STR);
-        $stmt->bindValue(':intl',     $value->intl,     \PDO::PARAM_STR);
-        $stmt->bindValue(':national', $value->national, \PDO::PARAM_STR);
-        $stmt->bindValue(':country',  $value->country,  \PDO::PARAM_STR);
+        $stmt->bindValue(':e164',     $parts['e164'],     \PDO::PARAM_STR);
+        $stmt->bindValue(':intl',     $parts['intl'],     \PDO::PARAM_STR);
+        $stmt->bindValue(':national', $parts['national'], \PDO::PARAM_STR);
+        $stmt->bindValue(':country',  $parts['country'],  \PDO::PARAM_STR);
         $stmt->execute();
 
         return true;
