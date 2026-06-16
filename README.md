@@ -2,6 +2,8 @@
 
 International phone number fieldtype for ProcessWire, powered by [intl-tel-input v28](https://github.com/jackocnr/intl-tel-input) (bundled — no CDN dependency).
 
+If this project helps your work, consider supporting future development: [GitHub Sponsors](https://github.com/sponsors/mxmsmnv) or [smnv.org/sponsor](https://smnv.org/sponsor/).  
+
 ## Features
 
 - Country picker with flag icons and search
