@@ -2,6 +2,8 @@
 
 International phone number fieldtype for ProcessWire, powered by [intl-tel-input v28](https://github.com/jackocnr/intl-tel-input) (bundled — no CDN dependency).
 
+![FieldtypeTel](assets/FieldtypeTel.png)
+
 **Author:** Maxim Semenov  
 **Website:** [smnv.org](https://smnv.org)  
 **Email:** [maxim@smnv.org](mailto:maxim@smnv.org)
